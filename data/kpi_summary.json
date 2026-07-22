@@ -1,0 +1,10 @@
+{
+  "total_cycles": 323,
+  "main_method": "규칙기반+ML 하이브리드",
+  "main_method_accuracy": 0.11029411764705882,
+  "main_method_macro_recall": 0.25,
+  "best_binary_f1_method": "규칙기반 단독",
+  "best_binary_f1": 0.9888475836431226,
+  "hardest_class": "NoNose,NoBody2 (Body1 판정)",
+  "hardest_class_note": "Nose(NoNose 여부)는 R03 신호로 거의 완벽 분리됨(r=-0.87) — 실제 탐지 난이도가 높은 쪽은 Body1이다(103·107·111~112장 참고)."
+}

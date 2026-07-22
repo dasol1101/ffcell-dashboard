@@ -1,0 +1,11 @@
+{
+  "R03_NOSE_THRESH": 3110.5,
+  "BODY2_THRESH_note": "v2(106장) 방식은 임계값이 아니라 신호 존재(NaN) 여부로 판정",
+  "BODY1_THRESH_note": "v2(106장) 방식은 임계값이 아니라 신호 존재(NaN) 여부로 판정",
+  "hierarchy": [
+    "1) nose_present == True  →  Normal",
+    "2) body2_present == True →  NoNose",
+    "3) body1_present == True →  NoNose,NoBody2",
+    "4) 위 세 조건 모두 False →  NoNose,NoBody2,NoBody1"
+  ]
+}
