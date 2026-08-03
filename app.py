@@ -16,7 +16,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-HTML_PATH = os.path.join(os.path.dirname(__file__), "dashboard.html")
+HTML_PATH = os.path.join(os.path.dirname(__file__), "dashboard_embedded.html")
 
 with open(HTML_PATH, "r", encoding="utf-8") as f:
     html_content = f.read()
