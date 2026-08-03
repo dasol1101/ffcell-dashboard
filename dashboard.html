@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>FFCell 불량 예측 대시보드 — 목업</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #12161B;
+    --surface: #1A2028;
+    --surface2: #202832;
+    --line: #2C3742;
+    --text: #E7ECF0;
+    --text-dim: #8C99A6;
+    --text-faint: #5C6774;
+
+    --normal: #3FB68A;
+    --nonose: #E8C24A;
+    --nobody2: #E38A3D;
+    --triple: #D6544B;
+    --boundary: #6C7A89;
+
+    --accent: #4C9FE8;
+    --accent-dim: #274154;
+    --warn-bg: #2B2417;
+    --warn-border: #6B5A28;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans KR', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  h1,h2,h3,.disp{font-family:'Space Grotesk','IBM Plex Sans KR',sans-serif;}
+
+  /* ---------- shell ---------- */
+  .shell{max-width:1180px;margin:0 auto;padding:0 24px 80px;}
+  header.top{
+    position:sticky; top:0; z-index:20;
+    background:rgba(18,22,27,0.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line);
+  }
+  .top-inner{max-width:1180px;margin:0 auto;padding:18px 24px 0;}
+  .top-row{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .mark{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:7px;
+    background:linear-gradient(135deg,var(--accent),#2E6FA8);
+    font-family:'Space Grotesk';font-weight:700;font-size:13px;color:#0A1116;
+  }
+  .brand h1{font-size:19px;font-weight:600;margin:0;letter-spacing:0.2px;}
+  .brand .sub{color:var(--text-dim);font-size:12.5px;}
+  .meta-badges{display:flex;gap:8px;flex-wrap:wrap;}
+  .badge{
+    font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);
+    color:var(--text-dim); font-family:'IBM Plex Mono';
+  }
+  .badge.mockup{border-color:var(--warn-border); color:#E3C878; background:var(--warn-bg);}
+
+  nav.tabs{display:flex;gap:4px;margin-top:16px;overflow-x:auto;}
+  nav.tabs button{
+    all:unset; cursor:pointer; white-space:nowrap;
+    padding:10px 16px; font-size:13.5px; color:var(--text-dim);
+    border-bottom:2px solid transparent; font-weight:500;
+  }
+  nav.tabs button .n{font-family:'IBM Plex Mono'; color:var(--text-faint); margin-right:7px; font-size:11.5px;}
+  nav.tabs button.active{color:var(--text); border-bottom-color:var(--accent);}
+  nav.tabs button.active .n{color:var(--accent);}
+  nav.tabs button:hover{color:var(--text);}
+
+  .page{display:none; padding-top:28px; animation:fade .25s ease;}
+  .page.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+
+  .page-head{margin-bottom:22px;}
+  .page-head .eyebrow{color:var(--accent); font-size:12px; font-family:'IBM Plex Mono'; letter-spacing:0.5px; text-transform:uppercase;}
+  .page-head h2{font-size:24px; margin:6px 0 6px; font-weight:600;}
+  .page-head p{color:var(--text-dim); font-size:14px; max-width:640px; line-height:1.55; margin:0;}
+
+  .grid{display:grid; gap:16px;}
+  .g4{grid-template-columns:repeat(4,1fr);}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  .g2{grid-template-columns:1.3fr 1fr;}
+  @media (max-width:860px){ .g4,.g3,.g2{grid-template-columns:1fr;} }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:18px 20px;
+  }
+  .card h3{font-size:13px; font-weight:600; margin:0 0 4px; color:var(--text);}
+  .card .cap{font-size:11.5px; color:var(--text-faint); margin-bottom:14px;}
+
+  .kpi .value{font-family:'IBM Plex Mono'; font-size:30px; font-weight:600; letter-spacing:-0.5px;}
+  .kpi .label{font-size:12px; color:var(--text-dim); margin-top:2px;}
+  .kpi .tag{
+    display:inline-block; margin-top:9px; font-size:10.5px; font-family:'IBM Plex Mono';
+    color:var(--accent); background:var(--accent-dim); padding:2px 7px; border-radius:5px;
+  }
+
+  /* class distribution bars */
+  .cls-row{display:flex; align-items:center; gap:10px; margin:9px 0; font-size:12.5px;}
+  .cls-row .name{width:150px; flex-shrink:0; color:var(--text-dim);}
+  .cls-row .bar-track{flex:1; background:#141920; border-radius:5px; height:16px; overflow:hidden;}
+  .cls-row .bar-fill{height:100%; border-radius:5px;}
+  .cls-row .n{width:46px; text-align:right; font-family:'IBM Plex Mono'; color:var(--text-dim); flex-shrink:0;}
+
+  .donut-wrap{display:flex; align-items:center; gap:20px;}
+  .donut-legend{font-size:12.5px; color:var(--text-dim); display:flex; flex-direction:column; gap:8px;}
+  .dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px;}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th,td{padding:7px 9px; text-align:right; border-bottom:1px solid var(--line);}
+  th:first-child,td:first-child{text-align:left; color:var(--text-dim);}
+  th{color:var(--text-faint); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:0.3px;}
+  td.mono, th.mono{font-family:'IBM Plex Mono';}
+  tr.hl td{color:var(--text); font-weight:600;}
+
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  .pill{
+    all:unset; cursor:pointer; padding:8px 14px; border-radius:8px; font-size:12.5px;
+    border:1px solid var(--line); color:var(--text-dim);
+  }
+  .pill.active{border-color:var(--accent); color:var(--text); background:var(--accent-dim);}
+
+  .divergence-note{
+    display:flex; gap:10px; align-items:flex-start; background:#171D24; border:1px solid var(--line);
+    border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-dim); margin-top:14px;
+  }
+  .divergence-note b{color:var(--text); font-weight:600;}
+
+  .branch-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px;}
+  .branch-card{border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#171D24;}
+  .branch-card .t{font-family:'IBM Plex Mono'; font-size:22px; font-weight:600;}
+  .branch-card .l{font-size:12px; color:var(--text-dim); margin-top:3px;}
+
+  .case-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px;}
+  @media (max-width:860px){.case-grid{grid-template-columns:repeat(2,1fr);}}
+  .case-card{border:1px solid var(--line); border-radius:9px; overflow:hidden; cursor:pointer; background:var(--surface);}
+  .case-card.active{border-color:var(--accent);}
+  .case-swatch{height:6px;}
+  .case-body{padding:12px 14px;}
+  .case-body .cid{font-family:'IBM Plex Mono'; font-size:11px; color:var(--text-faint);}
+  .case-body .lbl{font-size:13px; font-weight:600; margin-top:4px;}
+
+  .detail-row{display:grid; grid-template-columns:1.4fr 1fr; gap:16px; margin-top:16px;}
+  @media (max-width:860px){.detail-row{grid-template-columns:1fr;}}
+  .verdict-row{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;}
+  .verdict-row:last-child{border-bottom:none;}
+  .verdict-row .k{color:var(--text-dim);}
+  .status-chip{font-size:11px; font-family:'IBM Plex Mono'; padding:2px 8px; border-radius:5px;}
+  .status-chip.match{color:#3FB68A; background:#123024;}
+  .status-chip.watch{color:#E3C878; background:#2B2417;}
+
+  .roadmap-step{display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--line);}
+  .roadmap-step:last-child{border-bottom:none;}
+  .roadmap-step .dot2{
+    width:26px;height:26px;border-radius:50%; flex-shrink:0; display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono'; font-size:11px; margin-top:2px;
+  }
+  .roadmap-step .dot2.done{background:#123024; color:#3FB68A; border:1px solid #245A44;}
+  .roadmap-step .dot2.wip{background:#2B2417; color:#E3C878; border:1px solid #6B5A28;}
+  .roadmap-step .dot2.todo{background:#1A2028; color:var(--text-faint); border:1px solid var(--line);}
+  .roadmap-step h4{margin:0 0 3px; font-size:13.5px;}
+  .roadmap-step p{margin:0; font-size:12.5px; color:var(--text-dim); line-height:1.5;}
+
+  .note-box{
+    background:#171D24; border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+    font-size:12px; color:var(--text-dim); margin-top:10px; line-height:1.55;
+  }
+  .note-box b{color:var(--text);}
+
+  .legend-strip{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-dim); margin-top:10px;}
+  .legend-strip .item{display:flex; align-items:center; gap:6px;}
+  .legend-swatch{width:16px; height:3px; border-radius:2px;}
+
+  .footer-note{margin-top:40px; padding-top:18px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-faint); text-align:center;}
+
+  /* ---------- image gallery (Page 4) ---------- */
+  .img-gallery{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:4px;}
+  @media (max-width:860px){.img-gallery{grid-template-columns:1fr;}}
+  .img-item{display:flex; flex-direction:column; align-items:center;}
+  .img-frame{
+    width:100%; aspect-ratio:4/3; border-radius:8px; overflow:hidden;
+    background:#141920; border:1px solid var(--line); position:relative;
+  }
+  .img-frame img{width:100%; height:100%; object-fit:cover; display:block;}
+  .img-fallback{
+    display:none; flex-direction:column; align-items:center; justify-content:center;
+    position:absolute; inset:0; text-align:center; padding:10px; gap:6px;
+    color:var(--text-faint); font-size:10.5px; line-height:1.6;
+  }
+  .img-fallback .ic{font-size:20px; opacity:.6;}
+  .img-fallback .path{font-family:'IBM Plex Mono'; color:var(--text-dim); font-size:10px; word-break:break-all;}
+  .img-label{margin-top:8px; font-size:12.5px; font-weight:600; text-align:center;}
+
+  /* ---------- alert flow (Page 6) ---------- */
+  .flow-row{display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; margin-top:16px;}
+  .flow-box{
+    flex:1; min-width:170px; background:#171D24; border:1px solid var(--line); border-radius:8px;
+    padding:13px 15px; font-size:12.5px; display:flex; flex-direction:column; justify-content:center;
+  }
+  .flow-box .k{font-size:10.5px; color:var(--text-faint); font-family:'IBM Plex Mono'; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;}
+  .flow-box b{font-size:13.5px; color:var(--text); font-weight:600;}
+  .flow-box .d{font-size:11.5px; color:var(--text-dim); margin-top:3px; line-height:1.5;}
+  .flow-arrow{display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-size:18px; padding:0 2px; flex-shrink:0;}
+  .flow-split{flex:1.4; min-width:220px; display:flex; flex-direction:column; gap:10px;}
+  .flow-box.track-live{border-color:#245A44;}
+  .flow-box.track-whatif{border-color:#6B5A28;}
+  .flow-box.track-live .k{color:var(--normal);}
+  .flow-box.track-whatif .k{color:#E3C878;}
+
+  .slack-msg{
+    background:#171D24; border:1px solid var(--line); border-radius:8px;
+    padding:13px 15px; font-size:12.5px; line-height:1.65; margin-top:12px;
+  }
+  .slack-msg:first-of-type{margin-top:0;}
+  .slack-msg .ch{
+    font-family:'IBM Plex Mono'; font-size:11px; margin-bottom:7px; display:flex; align-items:center; gap:6px;
+  }
+  .slack-msg .ch .hash{color:var(--text-faint);}
+  .slack-msg.live .ch{color:var(--normal);}
+  .slack-msg.whatif .ch{color:#E3C878;}
+  .slack-msg .body{color:var(--text-dim); white-space:pre-line;}
+  .slack-msg .body b{color:var(--text); font-weight:600;}
+  .msg-attach{
+    margin-top:9px; padding-top:9px; border-top:1px dashed var(--line);
+    font-size:11.5px; color:var(--text-faint);
+  }
+  .msg-attach .path{font-family:'IBM Plex Mono'; color:var(--text-dim);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="top-row">
+      <div class="brand">
+        <span class="mark">FF</span>
+        <div>
+          <h1>FFCell 불량 예측 대시보드</h1>
+          <div class="sub">로켓 부품 조립 라인 · 조기 경보 시스템</div>
+        </div>
+      </div>
+      <div class="meta-badges">
+        <span class="badge mockup">MOCKUP · 화면 목업</span>
+        <span class="badge">데이터 기준 v81 (원본 320개 → 분석대상 316개)</span>
+        <span class="badge">검토의견 반영판</span>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ================= PAGE 1 ================= -->
+  <section class="page" id="page-1">
+    <div class="page-head">
+      <div class="eyebrow">01 · 종합 현황</div>
+      <h2>라인 전체 상태 — 진입 화면</h2>
+      <p>품질관리자·평가 청중이 처음 보는 화면. 조립 카운트 → 분류 성능 → 클래스 분포·근거 지표 순으로 내려간다.</p>
+    </div>
+
+    <div class="grid g4" style="margin-bottom:16px;">
+      <div class="card kpi">
+        <h3>총 조립 시도</h3>
+        <div class="value">320<span style="font-size:16px;color:var(--text-faint);">개</span></div>
+        <div class="label">라벨오류 의심 4개(5_10·5_11·5_28·5_265) 제외 시 316개</div>
+        <div class="label" style="margin-top:2px;color:var(--text-dim);">근거: 조립 순서상 물리적으로 불가능한 신호 조합 (상세: 아래 NoBody2 카드)</div>
+        <div class="label" style="margin-top:2px;color:var(--boundary);">※ 5_40은 별도 경계 케이스 — 라벨오류 아님</div>
+      </div>
+      <div class="card kpi">
+        <h3>성공 (정상)</h3>
+        <div class="value" style="color:var(--normal);">156</div>
+        <div class="label">전체의 48.8%</div>
+      </div>
+      <div class="card kpi">
+        <h3>실패 (결함)</h3>
+        <div class="value" style="color:var(--triple);">164</div>
+        <div class="label">전체의 51.2%</div>
+      </div>
+      <div class="card kpi">
+        <h3>실패율</h3>
+        <div class="value">51.2<span style="font-size:16px;color:var(--text-faint);">%</span></div>
+        <div class="label">3개 결함 유형 합산</div>
+      </div>
+    </div>
+
+    <div class="grid g4" style="margin-bottom:16px;">
+      <div class="card kpi">
+        <h3>정확도</h3>
+        <div class="value">0.982</div>
+        <div class="tag">GroupKFold · 세션 분리</div>
+        <div class="label" style="margin-top:4px;">2023년 세션5 검증 · 규칙기반 최종판 · n≈273</div>
+      </div>
+      <div class="card kpi">
+        <h3>탐지 균형 (macro recall)</h3>
+        <div class="value">0.979</div>
+        <div class="tag">GroupKFold · 세션 분리</div>
+        <div class="label" style="margin-top:4px;">2023년 세션5 검증 · 규칙기반 최종판 · n≈273</div>
+      </div>
+      <div class="card kpi">
+        <h3>결함 탐지율</h3>
+        <div class="value">99.6<span style="font-size:16px;color:var(--text-faint);">%</span></div>
+        <div class="label">3중결손 100% · NoBody2 92.2%</div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:8px;">판정 방식</h3>
+        <div style="font-size:13px; line-height:1.5;">
+          <b style="color:var(--accent);">규칙기반 계층 분류기</b><br>
+          <span style="color:var(--text-dim); font-size:12px;">ML은 보조/부록 — 주력 판정에 관여 안 함</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3>클래스 분포</h3>
+        <div class="cap">4개 결함 유형 · 세션1~5 원본 전체 320개 기준(라벨오류 제외 전)</div>
+        <div class="cls-row"><span class="name">Normal</span><div class="bar-track"><div class="bar-fill" style="width:48.8%; background:var(--normal);"></div></div><span class="n">156</span></div>
+        <div class="cls-row"><span class="name">NoNose</span><div class="bar-track"><div class="bar-fill" style="width:18.4%; background:var(--nonose);"></div></div><span class="n">59</span></div>
+        <div class="cls-row"><span class="name">NoNose,NoBody2</span><div class="bar-track"><div class="bar-fill" style="width:15.9%; background:var(--nobody2);"></div></div><span class="n">51</span></div>
+        <div class="cls-row"><span class="name">3중결손</span><div class="bar-track"><div class="bar-fill" style="width:16.9%; background:var(--triple);"></div></div><span class="n">54</span></div>
+      </div>
+      <div class="card">
+        <h3>정상 vs 결함</h3>
+        <div class="cap">전체 대비 결함 비율</div>
+        <div class="donut-wrap">
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r="54" fill="none" stroke="#1A2028" stroke-width="20"/>
+            <circle cx="70" cy="70" r="54" fill="none" stroke="var(--normal)" stroke-width="20"
+                    stroke-dasharray="169.8 339.3" stroke-dashoffset="0" transform="rotate(-90 70 70)"/>
+            <circle cx="70" cy="70" r="54" fill="none" stroke="var(--triple)" stroke-width="20"
+                    stroke-dasharray="173.5 339.3" stroke-dashoffset="-169.8" transform="rotate(-90 70 70)"/>
+            <text x="70" y="66" text-anchor="middle" font-family="IBM Plex Mono" font-size="20" fill="#E7ECF0" font-weight="600">51.2%</text>
+            <text x="70" y="83" text-anchor="middle" font-family="IBM Plex Sans KR" font-size="10.5" fill="#8C99A6">결함</text>
+          </svg>
+          <div class="donut-legend">
+            <div><span class="dot" style="background:var(--normal);"></span>정상 156개 (48.8%)</div>
+            <div><span class="dot" style="background:var(--triple);"></span>결함 164개 (51.2%)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:16px;">
+      <div class="card">
+        <h3>혼동행렬 — 규칙기반 단독</h3>
+        <div class="cap">GroupKFold(세션1~4 학습 → 세션5 검증), 273개 기준</div>
+        <table>
+          <tr><th>실제 \ 예측</th><th class="mono">NoNose</th><th class="mono">+NoBody2</th><th class="mono">3중결손</th><th class="mono">Normal</th><th class="mono">recall</th></tr>
+          <tr><td>NoNose</td><td class="mono">29</td><td class="mono">0</td><td class="mono">0</td><td class="mono">1</td><td class="mono">96.7%</td></tr>
+          <tr><td>NoNose,NoBody2</td><td class="mono">2</td><td class="mono">47</td><td class="mono">1</td><td class="mono">1</td><td class="mono" style="color:var(--normal);">92.2%</td></tr>
+          <tr><td>3중결손</td><td class="mono">0</td><td class="mono">0</td><td class="mono">54</td><td class="mono">0</td><td class="mono">100%</td></tr>
+          <tr><td>Normal</td><td class="mono">0</td><td class="mono">0</td><td class="mono">1</td><td class="mono">137</td><td class="mono">99.3%</td></tr>
+        </table>
+        <div class="note-box">이전 버전은 이 지점(+NoBody2 → 3중결손 오분류 17건)이 최대 약점이었으나, Body1·Body2 판정 방식을 window_max+크기임계값·사이클별 타이밍 밀림 보정·창 겹침 보정 3단계로 개선해 <b>17건 → 1건</b>으로 줄임(모델 개선은 이걸로 종료). 지연보정·gap체크 개별 기여도를 따로 확인한 결과 <b>지연보정이 8건, gap체크가 1건을 각각 독립적으로 해결</b>했고 <b>상호작용 0건</b> — 두 보정이 서로 다른 문제를 겨냥한다는 뜻. 이와는 별개로 특이 사례 <b>5건</b>을 추적 중인데, <b>3건(5_10·5_11·5_28)</b>은 5_265와 같은 유형(조립 순서상 물리적으로 불가능한 신호 조합)의 라벨오류 의심 후보, <b>1건(5_40)</b>은 R01 투입은 정상 타이밍(15.39초, 라벨오류 제외 전 원본 320개 사이클 중앙값 15.41초와 거의 동일)이었음에도 R03 신호 자체가 원인 불명으로 지연되어 나타나는 경계 케이스, <b>1건(5_240)</b>은 R01 정착 시각 계산이 원래 50초 탐색구간 경계에 걸려 NaN이었던 것을 60초로 늘려 해결(정착 51.6초 확인, 다른 319개엔 부작용 없음)했음에도 R03 신호가 R01과 무관하게 100초 넘게 홀로 늦게 나타나는 <b>신규 유형의 경계 케이스</b>로 확인됨(전부 라벨오류로 단정하지 않음). <b style="color:var(--boundary);">※ 위 '총 조립 시도' 카드의 라벨오류 제외 4개(5_10·5_11·5_28·5_265)와 여기 5건(5_10·5_11·5_28·5_40·5_240)은 구성이 다릅니다 — 5_40·5_240을 라벨오류에 포함할지는 팀 확인이 필요한 남은 과제입니다.</b></div>
+      </div>
+      <div class="card">
+        <h3>피처 중요도 Top 5 (SHAP)</h3>
+        <div class="cap">Block A 공식 78개 피처셋 기준</div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">r04_grab_count</span><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent);"></div></div><span class="n">.031</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">R02_Pot_min</span><div class="bar-track"><div class="bar-fill" style="width:84%; background:var(--accent);"></div></div><span class="n">.026</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">R03_Load_mean</span><div class="bar-track"><div class="bar-fill" style="width:84%; background:var(--accent);"></div></div><span class="n">.026</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">R02_Pot_std</span><div class="bar-track"><div class="bar-fill" style="width:77%; background:var(--accent);"></div></div><span class="n">.024</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">r03_nose_fwhm</span><div class="bar-track"><div class="bar-fill" style="width:77%; background:var(--accent);"></div></div><span class="n">.024</span></div>
+        <div class="note-box">참고용 — 주력 판정 로직은 규칙기반이며, SHAP은 부록 페이지에서 상세 확인.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 2 ================= -->
+  <section class="page" id="page-2">
+    <div class="page-head">
+      <div class="eyebrow">02 · 불량 발생 시점 — 핵심</div>
+      <h2>언제, 어떤 신호로 불량이 드러나는가</h2>
+      <p>경과시간(초) 축 위에서 불량 유형별 신호가 정상 밴드를 벗어나는 지점을 본다. Nose 하나가 아니라 <b style="color:var(--text);">Body1·Body2·Nose 3개 신호</b>를 모두 보여준다 — 결손이 많을수록 더 이른 시점에 갈라진다.</p>
+    </div>
+
+    <div class="pill-row" id="defect-pills">
+      <button class="pill active" data-cls="nonose">NoNose</button>
+      <button class="pill" data-cls="nobody2">NoNose,NoBody2</button>
+      <button class="pill" data-cls="triple">3중결손</button>
+    </div>
+
+    <div class="card">
+      <h3 id="chart-title">R03 조립력 — Normal vs NoNose</h3>
+      <div class="cap">정상 밴드(음영) 대비 선택 유형 평균 파형 · 분기 구간 강조 · <b>시간축: R01 투입완료 시점 기준 경과초</b> (사이클마다 다른 투입 소요시간 영향 제거, 2026-07-27 튜터 피드백 반영)</div>
+      <svg id="timeline-svg" width="100%" height="360" viewBox="0 0 1080 360" style="overflow:visible;">
+        <!-- axes drawn by JS -->
+      </svg>
+      <div class="legend-strip">
+        <div class="item"><span class="legend-swatch" style="background:var(--text-faint);"></span>정상 밴드</div>
+        <div class="item"><span class="legend-swatch" style="background:var(--accent);"></span>선택 유형 평균 파형</div>
+        <div class="item"><span class="legend-swatch" style="background:var(--triple); height:16px; width:3px; opacity:.6;"></span>분기 시점</div>
+      </div>
+      <div class="divergence-note" id="divergence-note">
+        <span>💡</span>
+        <span><b>NoNose</b>는 <b>(투입완료 후) 85초</b> 부근(Nose 조립 구간)에서 정상 밴드를 벗어난다 — 완성(투입완료 후 약 105초) 전 <b>19% 시점</b>에 조기 판정 가능.</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>불량 유형별 분기 시점 요약</h3>
+      <div class="cap">결손이 많을수록(3중결손) 더 이른 시점에 신호가 갈라진다 — 조기 경보의 핵심 근거</div>
+      <div class="branch-cards">
+        <div class="branch-card">
+          <div class="t" style="color:var(--nonose);">85초</div>
+          <div class="l">NoNose 단독 — Nose 봉우리 소실 (투입완료 기준, R03 원래 93~100초 창)</div>
+        </div>
+        <div class="branch-card">
+          <div class="t" style="color:var(--nobody2);">71초</div>
+          <div class="l">+NoBody2 — Body2 봉우리부터 소실 (투입완료 기준)</div>
+        </div>
+        <div class="branch-card">
+          <div class="t" style="color:var(--triple);">58초</div>
+          <div class="l">3중결손 — Body1 봉우리까지 전부 소실 (투입완료 기준, 가장 이른 경보)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 3 ================= -->
+  <section class="page" id="page-3">
+    <div class="page-head">
+      <div class="eyebrow">03 · 대표 사례</div>
+      <h2>결론이 개별 사이클에서도 보이는가</h2>
+      <p>전수 탐색이 아니라 준비된 대표 사례로 설명한다. 사이클을 선택하면 판정 근거가 함께 뜬다.</p>
+    </div>
+
+    <div class="case-grid" id="case-grid"></div>
+
+    <div class="detail-row">
+      <div class="card">
+        <h3 id="case-title">사이클 5_100 — Normal</h3>
+        <div class="cap" id="case-cap">R03 조립력 파형 — 정상 대비 어디서 갈리는지</div>
+        <svg width="100%" height="220" viewBox="0 0 640 220" id="case-svg"></svg>
+      </div>
+      <div class="card">
+        <h3>판정 결과</h3>
+        <div class="verdict-row"><span class="k">실제 라벨</span><span id="v-actual">Normal</span></div>
+        <div class="verdict-row"><span class="k">규칙기반 판정</span><span id="v-pred">Normal</span></div>
+        <div class="verdict-row"><span class="k">판정 일치</span><span id="v-match" class="status-chip match">일치</span></div>
+        <div class="verdict-row"><span class="k">근거 신호 구간</span><span id="v-evidence" class="mono" style="font-size:12px;">Body1/Body2/Nose 전 봉우리 존재</span></div>
+        <div class="note-box" id="v-explain">4개 봉우리(투입완료 기준 51·64·77·88초)가 모두 정상 범위 — 결손 신호 없음으로 규칙기반이 Normal 판정.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 4 ================= -->
+  <section class="page" id="page-4">
+    <div class="page-head">
+      <div class="eyebrow">04 · 이미지 활용</div>
+      <h2>결함 이미지 — Slack 알림 첨부용 대표 사진</h2>
+      <p>이미지를 판정(분류)에 쓰는 것이 아니라, 결함이 발생했을 때 <b style="color:var(--text);">n8n→Slack 알림에 참고 사진으로 첨부</b>하는 용도로만 사용한다. 실제 그 사이클을 촬영한 사진이 아니라, 해당 결함 유형의 대표 예시 사진이다.</p>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3>적용 흐름</h3>
+        <div class="cap">State9 이미지를 알림에 붙이기까지 3단계 — 전부 적용 완료</div>
+        <div class="roadmap-step">
+          <div class="dot2 done">✓</div>
+          <div><h4>이미지 폴더 구조 확인</h4><p>State9 zip(Cycle_state_9) 안에 Test/Train 하위로 결함 라벨별 폴더(NoNose · NoNose,NoBody2 · NoNose,NoBody2,NoBody1)가 이미 정확히 분류되어 있음을 확인</p></div>
+        </div>
+        <div class="roadmap-step">
+          <div class="dot2 done">✓</div>
+          <div><h4>대표 이미지 캐싱</h4><p>폴더마다 첫 파일 1장만 읽어 base64로 미리 캐싱 — 매 사이클마다 zip을 다시 열지 않고 재사용</p></div>
+        </div>
+        <div class="roadmap-step">
+          <div class="dot2 done">✓</div>
+          <div><h4>n8n → Slack 알림에 첨부</h4><p>결함 판정 시 준실시간 알림 메시지에 이미지 첨부 — "실제 이 사이클 사진 아님, 예시 사진" 안내 문구 동시 표시 (상세: 06 부록)</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>State4 / State9 정의</h3>
+        <div class="cap">공정 단계 정의와 촬영 시점 라벨을 구분해서 서술</div>
+        <table>
+          <tr><th>State</th><th class="mono" style="text-align:left;">공정 정의</th></tr>
+          <tr><td>State4</td><td style="text-align:left;">조립 초반 (Body1 결합 구간)</td></tr>
+          <tr><td>State9</td><td style="text-align:left;">완제품 이송 · 트레이 집기 — 결함 여부와 무관한 공통 체크포인트</td></tr>
+        </table>
+        <div class="note-box">State9 시점에 촬영된 사진 중 하나가 “전체결손” 라벨일 뿐, State9 자체가 “전체결손 상태”를 의미하지 않음 — 발표 중 질문 대비 필수 구분.</div>
+
+        <h3 style="margin-top:20px;">대표 이미지 선정 기준 (한계 · 팀 검토 필요)</h3>
+        <div class="cap">현재: 폴더 내 첫 파일을 그대로 대표 이미지로 사용</div>
+        <div class="note-box">지금은 <span class="mono">IMAGE_FOLDER_MAP</span> 폴더별 파일 목록의 <b>첫 번째 파일</b>을 기계적으로 선택하고 있음 — 화질·구도가 대표성 있는 사진인지는 아직 검토 전. 더 대표성 있는 사진으로 교체할지는 팀 논의 대기 중인 남은 과제.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>대표 이미지 — 결함 유형별 예시 (Cycle_state_9 · Test)</h3>
+      <div class="cap">n8n·Slack 알림에 실제로 첨부되는 이미지와 동일 소스 — 경로만 참조하는 목업이며, 실제 파일은 리포지토리 <span class="mono">images/</span>에 커밋 후 자동 표시됨</div>
+      <div class="img-gallery">
+        <div class="img-item">
+          <div class="img-frame">
+            <img src="images/sample_nonose.png" alt="NoNose 대표 이미지"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <div class="img-fallback">
+              <span class="ic">🖼</span>
+              <span>이미지 파일 대기 중</span>
+              <span class="path">images/sample_nonose.png</span>
+            </div>
+          </div>
+          <div class="img-label" style="color:var(--nonose);">NoNose</div>
+        </div>
+        <div class="img-item">
+          <div class="img-frame">
+            <img src="images/sample_nonose_nobody2.png" alt="NoNose,NoBody2 대표 이미지"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <div class="img-fallback">
+              <span class="ic">🖼</span>
+              <span>이미지 파일 대기 중</span>
+              <span class="path">images/sample_nonose_nobody2.png</span>
+            </div>
+          </div>
+          <div class="img-label" style="color:var(--nobody2);">NoNose,NoBody2</div>
+        </div>
+        <div class="img-item">
+          <div class="img-frame">
+            <img src="images/sample_triple.png" alt="3중결손 대표 이미지"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+            <div class="img-fallback">
+              <span class="ic">🖼</span>
+              <span>이미지 파일 대기 중</span>
+              <span class="path">images/sample_triple.png</span>
+            </div>
+          </div>
+          <div class="img-label" style="color:var(--triple);">3중결손</div>
+        </div>
+      </div>
+      <div class="note-box">이 사진들은 <b>판정 근거가 아니라 알림 첨부용 참고 자료</b>다. 센서(R03) 판정만으로 결함 유형이 확정되며, 이미지는 그 결과를 사람이 눈으로 참고하기 쉽게 붙여주는 역할만 한다.</div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 5 (부록) ================= -->
+  <section class="page" id="page-5">
+    <div class="page-head">
+      <div class="eyebrow">부록 · 모델 검증</div>
+      <h2>규칙기반을 왜 주력으로 삼았나</h2>
+      <p>검증이 실패한 게 아니라, 데이터 구조가 규칙기반을 요구했다 — ML은 GroupKFold(세션 분리)에서 실패했지만, 규칙기반은 통과했다.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>검증 전략 비교 — StratifiedKFold vs GroupKFold</h3>
+      <div class="cap">같은 데이터, 같은 모델이라도 분할 방식에 따라 결과가 완전히 달라진다</div>
+      <table>
+        <tr><th>분할 방식</th><th class="mono">의미</th><th class="mono">ML 정확도</th><th class="mono">해석</th></tr>
+        <tr><td>StratifiedKFold</td><td class="mono" style="text-align:left;">같은 세션 데이터가 train/test에 섞임</td><td class="mono">~0.98</td><td class="mono" style="text-align:left; color:var(--nobody2);">낙관적 — 실제 배포 조건 아님</td></tr>
+        <tr class="hl"><td>GroupKFold(세션)</td><td class="mono" style="text-align:left;">세션1~4 학습 → 세션5 완전 분리 검증</td><td class="mono">0.110</td><td class="mono" style="text-align:left; color:var(--triple);">정직한 검증 — ML 붕괴 확인</td></tr>
+      </table>
+      <div class="note-box">GroupKFold는 검증 방식이 잘못된 게 아니라 <b>가장 정직하고 필요한 검증</b>이었다. 그걸 통과한 게 규칙기반의 진짜 성과.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>세 가지 방식 최종 비교</h3>
+      <div class="cap">GroupKFold(세션1~4→세션5) 기준, 라벨 정정판</div>
+      <table>
+        <tr><th>방식</th><th class="mono">accuracy</th><th class="mono">macro recall</th><th class="mono">비고</th></tr>
+        <tr class="hl"><td>규칙기반 단독</td><td class="mono">0.982</td><td class="mono">0.979</td><td class="mono" style="text-align:left; color:var(--normal);">채택 — 주력 판정 (window_max+지연보정+gap체크)</td></tr>
+        <tr><td>전체피처 ML</td><td class="mono">0.110</td><td class="mono">0.250</td><td class="mono" style="text-align:left; color:var(--triple);">완전 붕괴 (전부 한 클래스)</td></tr>
+        <tr><td>게이트형 하이브리드</td><td class="mono">0.608</td><td class="mono">0.490</td><td class="mono" style="text-align:left; color:var(--nobody2);">경계 사례만 ML — 참고용</td></tr>
+      </table>
+      <div class="note-box">‘규칙기반 하이브리드’라는 표현은 쓰지 않는다. 실제 주력 구조는 <b>규칙기반 단독 + ML은 경계 사례 보조(부록)</b>인 직렬 계층 구조.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3>2024년 실데이터 일반화 검증 — 외부 시점 검증 <span class="badge" style="margin-left:6px;">최중요</span></h3>
+      <div class="cap">2023년 확정 임계값(Nose 3110.5 / Body2 4961.0 / Body1 5173.5)을 <b>재학습 없이 그대로</b> 2024-08-13 실데이터(94개 사이클, edge 1개 제외 93개)에 적용</div>
+      <div class="grid g4" style="margin:12px 0;">
+        <div class="card kpi" style="padding:14px;">
+          <h3 style="font-size:12px;">Accuracy</h3>
+          <div class="value" style="font-size:26px;">90.3<span style="font-size:14px;color:var(--text-faint);">%</span></div>
+        </div>
+        <div class="card kpi" style="padding:14px;">
+          <h3 style="font-size:12px;">Macro Recall</h3>
+          <div class="value" style="font-size:26px;">0.919</div>
+        </div>
+        <div class="card kpi" style="padding:14px;">
+          <h3 style="font-size:12px;">검증 표본</h3>
+          <div class="value" style="font-size:26px;">93<span style="font-size:14px;color:var(--text-faint);">개</span></div>
+        </div>
+        <div class="card kpi" style="padding:14px;">
+          <h3 style="font-size:12px;">재학습</h3>
+          <div class="value" style="font-size:22px;color:var(--normal);">없음</div>
+        </div>
+      </div>
+      <table>
+        <tr><th>클래스</th><th class="mono">Recall (2024)</th><th class="mono">비고</th></tr>
+        <tr class="hl"><td>Normal</td><td class="mono" style="color:var(--nobody2);">85.0%</td><td class="mono" style="text-align:left;">오분류 6건 — 전량 3중결손으로 오판 (아래 설명 참고)</td></tr>
+        <tr><td>NoNose</td><td class="mono">88.2%</td><td class="mono" style="text-align:left;">-</td></tr>
+        <tr><td>+NoBody2</td><td class="mono">94.4%</td><td class="mono" style="text-align:left;">-</td></tr>
+        <tr><td>3중결손</td><td class="mono">100%</td><td class="mono" style="text-align:left;">-</td></tr>
+      </table>
+      <div class="note-box">Normal recall이 85.0%로 상대적으로 낮게 나온 이유: 오분류 6건 전부 <b>Normal→3중결손</b> 방향이며, PART20에서 이미 확인된 <b>"타이밍 밀림"</b> 현상(R01 투입 완료 시점이 사이클마다 달라 신호가 밀리는 현상)이 2024년 데이터에도 동일하게 재현된 것으로 확인됨 — <b>신규 버그가 아니라 기존에 알던 한계가 다시 나타난 것</b>. 나머지 클래스는 88~100%로 2023년 검증(0.982/0.979)과 큰 차이 없이 일반화됨.</div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3>피처 채택 흐름</h3>
+        <div class="cap">원본 123개 → Block A 공식 78개</div>
+        <div class="cls-row"><span class="name">① 원본 엔지니어링</span><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent);"></div></div><span class="n">123</span></div>
+        <div class="cls-row"><span class="name">② 누수 제거(X_clean)</span><div class="bar-track"><div class="bar-fill" style="width:97%; background:var(--accent);"></div></div><span class="n">120</span></div>
+        <div class="cls-row"><span class="name">③ 도메인 제외(v62)</span><div class="bar-track"><div class="bar-fill" style="width:65%; background:var(--accent);"></div></div><span class="n">80</span></div>
+        <div class="cls-row"><span class="name">④ R02 오염 제거</span><div class="bar-track"><div class="bar-fill" style="width:63%; background:var(--accent);"></div></div><span class="n">78</span></div>
+      </div>
+      <div class="card">
+        <h3>SHAP · ML (참고용)</h3>
+        <div class="cap">주력이 규칙기반이므로 비중 축소 배치</div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">r04_grab_count</span><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--text-faint);"></div></div><span class="n">.031</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">R02_Pot_min</span><div class="bar-track"><div class="bar-fill" style="width:84%; background:var(--text-faint);"></div></div><span class="n">.026</span></div>
+        <div class="cls-row"><span class="name mono" style="font-size:11.5px;">R03_Load_mean</span><div class="bar-track"><div class="bar-fill" style="width:84%; background:var(--text-faint);"></div></div><span class="n">.026</span></div>
+        <div class="note-box">RandomForest 내장 feature_importances_ 와 SHAP 순위는 대체로 일치 — 상세는 노트북 섹션116 참고.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 6 (부록: 알림 자동화) ================= -->
+  <section class="page" id="page-6">
+    <div class="page-head">
+      <div class="eyebrow">부록 · 알림 자동화</div>
+      <h2>이상 감지 → 알림까지, 투 트랙 자동화 (n8n)</h2>
+      <p>사이클 판정과 라인정지 감지 결과를 n8n 웹훅으로 전달해 <b style="color:var(--text);">준실시간 알림</b>과 <b style="color:var(--text);">What-if 시뮬레이션</b> 두 채널로 분리 발송한다. 판정 로직은 전부 Python에서 끝나며, n8n은 전달·발송만 담당한다.</p>
+    </div>
+
+    <div class="card">
+      <h3>알림 흐름</h3>
+      <div class="cap">결함/라인정지 감지 시점부터 Slack 도착까지</div>
+      <div class="flow-row">
+        <div class="flow-box">
+          <div class="k">Trigger</div>
+          <b>사이클 완료 · 라인정지 감지</b>
+          <div class="d">규칙기반 판정 / R01 신호 기반 정지 감지</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">
+          <div class="k">Webhook</div>
+          <b>n8n (ffcell-cycle)</b>
+          <div class="d">Python에서 payload POST · 판정 로직 관여 없음</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-split">
+          <div class="flow-box track-live">
+            <div class="k">Track 1 · 준실시간 알림</div>
+            <b>#부품-결함-탐지-전체</b>
+            <div class="d">사이클 판정 · 라인정지 의심 즉시 통보 — 결함이면 대표 이미지 첨부(📎)</div>
+          </div>
+          <div class="flow-box track-whatif">
+            <div class="k">Track 2 · What-if</div>
+            <b>#whatif-투트랙-채널-전체</b>
+            <div class="d">신규 워크스페이스 · 결함/정지 발생 시에만 별도 발송</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:16px;">
+      <div class="card">
+        <h3>준실시간 알림 예시</h3>
+        <div class="cap">사이클 판정 · 라인정지 감지 시 즉시 발송</div>
+        <div class="slack-msg live">
+          <div class="ch"><span class="hash">#</span>부품-결함-탐지-전체</div>
+          <div class="body">[결함 발생] 사이클 #142 · <b>NoNose</b> 판정
+근거: R03 (투입완료 기준) 85초 부근 구간 신호 없음 (임계값 3110.5 미만)</div>
+          <div class="msg-attach">📎 이미지 첨부 — <span class="path">sample_nonose.png</span> (해당 사이클 실제 사진 아님, 예시 사진)</div>
+        </div>
+        <div class="slack-msg live">
+          <div class="ch"><span class="hash">#</span>부품-결함-탐지-전체</div>
+          <div class="body">[라인정지 의심] 09:12:04 직전 47초 동안 R01 움직임 없음
+정상 쉬는시간 대비 초과 — 확인 필요</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>What-if 알림 예시</h3>
+        <div class="cap">결함·라인정지가 실제로 발생했을 때만 별도 채널로 발송</div>
+        <div class="slack-msg whatif">
+          <div class="ch"><span class="hash">#</span>whatif-투트랙-채널-전체</div>
+          <div class="body">[What-if] 사이클 #142 · <b>노즈 미조립</b> 결함 발생
+재작업 없이 즉시 폐기했다면 — 팀 시뮬레이션 기준 폐기율 <b>51%</b>
+1회 재작업(성공률 90%) 정책 적용 시 — 예상 폐기율 약 <b>5%</b>로 감소</div>
+        </div>
+        <div class="msg-attach">※ 재작업 성공률 90%는 실측 데이터가 아니라 팀이 설정한 <b>가정값</b>입니다 — 조건부 추정(폐기율 51%도 데이터셋 구성비, 실제 불량률 아님).</div>
+        <div class="slack-msg whatif">
+          <div class="ch"><span class="hash">#</span>whatif-투트랙-채널-전체</div>
+          <div class="body">[What-if] 라인정지로 인한 예상 생산 손실
+정상 대비 <b>8초</b> 더 멈춰 있었음 — 약 <b>0.0개</b> 사이클 분량의 생산 기회 손실 추정</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-box" style="margin-top:16px;">Colab→n8n→Slack 파이프라인은 <b>실제로 end-to-end 연동을 완료</b>했습니다(94개 사이클 전부 200 응답, 이미지 첨부 포함 정상 수신 확인). 다만 2024년 저장 데이터를 순서대로 재생하는 <b>시뮬레이션</b>이며, 실제 라인의 실시간 데이터가 아닙니다. 최종 알림 채널(Slack vs 이메일 등)은 아직 확정이 아니며, 품질담당자의 현장 활용 방식은 팀 논의가 필요합니다. 워크플로우는 <span class="mono">ffcell_n8n_workflow_v7_whatif워크스페이스반영.json</span> 기준입니다.</div>
+  </section>
+
+  <div class="footer-note">
+    FFCell 대시보드 목업 v3.7 (이미지=알림 첨부용으로 재정의 · n8n 파이프라인 완료 상태 반영) · 검토의견 4가지 반영 + PART20 규칙기반 개선(window_max·지연보정·gap체크, macro_recall 0.892→0.979) 반영 · 실제 노트북 실행 결과 기반, 일부 파형은 예시용 근사치
+  </div>
+</div>
+
+<script>
+const PAGES = [
+  {id:1, label:'종합 현황'},
+  {id:2, label:'불량 발생 시점'},
+  {id:3, label:'대표 사례'},
+  {id:4, label:'이미지 활용'},
+  {id:5, label:'부록: 모델 검증'},
+  {id:6, label:'부록: 알림 자동화'},
+];
+const tabsEl = document.getElementById('tabs');
+PAGES.forEach((p,i)=>{
+  const b = document.createElement('button');
+  b.innerHTML = `<span class="n">0${p.id}</span>${p.label}`;
+  if(i===0) b.classList.add('active');
+  b.onclick = ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+    document.getElementById('page-'+p.id).classList.add('active');
+  };
+  tabsEl.appendChild(b);
+});
+document.getElementById('page-1').classList.add('active');
+
+/* ---------- Page 2: timeline chart ---------- */
+// 튜터 피드백(2026-07-27) 반영: 사이클 시작 기준 절대시각 → R01 "투입완료" 기준
+// 상대시각으로 전환 (기준 이동량 15.41초 = 라벨오류 제외 전 원본 320개 사이클 R01 정착시각 중앙값, 노트북 PART22 계산치)
+const DEFECTS = {
+  nonose: {
+    title:'R03 조립력 — Normal vs NoNose',
+    note:'<b>NoNose</b>는 <b>(투입완료 후) 85초</b> 부근(Nose 조립 구간)에서 정상 밴드를 벗어난다 — 완성(투입완료 후 약 105초) 전 <b>19% 시점</b>에 조기 판정 가능.',
+    branch: 84.59, color:'var(--nonose)',
+    // peaks present: Body1(66), Body2(79) ; Nose(97) missing — 좌표 전부 -15.41초 이동
+    curve: [[34.59,300],[48.59,300],[49.59,297],[50.59,110],[51.59,115],[52.59,297],[61.59,300],
+            [62.59,296],[63.59,115],[64.59,120],[65.59,296],[74.59,300],[84.59,300],[86.59,300],
+            [87.59,297],[89.09,120],[90.59,140],[92.09,297],[96.59,300],[104.59,300]]
+  },
+  nobody2: {
+    title:'R03 조립력 — Normal vs NoNose,NoBody2',
+    note:'<b>+NoBody2</b>는 <b>(투입완료 후) 71초</b> 부근(Body2 조립 구간)부터 정상 밴드를 벗어난다 — NoNose보다 더 이른 조기 판정.',
+    branch: 70.59, color:'var(--nobody2)',
+    // only Body1 peak present — 좌표 전부 -15.41초 이동
+    curve: [[34.59,300],[48.59,300],[49.59,297],[50.59,130],[51.59,135],[52.59,297],[74.59,300],[84.59,300],
+            [87.59,297],[89.09,150],[90.59,170],[92.09,297],[96.59,300],[104.59,300]]
+  },
+  triple: {
+    title:'R03 조립력 — Normal vs 3중결손',
+    note:'<b>3중결손</b>은 <b>(투입완료 후) 58초</b> 부근(Body1 조립 구간)부터 이미 정상 밴드를 벗어난다 — 가장 이른 조기 경보 지점.',
+    branch: 57.59, color:'var(--triple)',
+    // no peaks present at all — 좌표 전부 -15.41초 이동
+    curve: [[34.59,300],[48.59,300],[84.59,300],[86.59,297],[88.09,80],[89.59,95],
+            [91.09,297],[96.59,300],[104.59,300]]
+  }
+};
+const NORMAL_CURVE = [[34.59,300],[48.59,300],[49.59,297],[50.59,100],[51.59,105],[52.59,297],
+    [61.59,300],[62.59,296],[63.59,105],[64.59,112],[65.59,296],[74.59,300],[75.59,296],
+    [77.09,85],[78.59,82],[80.59,88],[82.09,296],[86.59,300],[87.59,296],
+    [89.09,65],[90.59,85],[92.09,296],[96.59,300],[104.59,300]];
+
+function smoothPath(pts){
+  // simple catmull-rom to bezier for smoother look
+  if(pts.length<2) return '';
+  let d = `M ${pts[0][0]},${pts[0][1]}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0 = pts[i===0?0:i-1], p1=pts[i], p2=pts[i+1], p3=pts[i+2===pts.length+1?i+1:Math.min(i+2,pts.length-1)];
+    const cp1x = p1[0] + (p2[0]-p0[0])/6;
+    const cp1y = p1[1] + (p2[1]-p0[1])/6;
+    const cp2x = p2[0] - (p3[0]-p1[0])/6;
+    const cp2y = p2[1] - (p3[1]-p1[1])/6;
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+function scaleX(t){ return 40 + (t-30)/(107-30) * 1000; } // 투입완료 기준 상대시각(2026-07-27 튜터 피드백 반영)
+function scaleY(v){ return 40 + (v-40)/(300-40) * 260; } // v range ~40..300 (inverted load), map to svg y 40..300 area
+
+function renderTimeline(key){
+  const cfg = DEFECTS[key];
+  document.getElementById('chart-title').textContent = cfg.title;
+  document.getElementById('divergence-note').querySelector('span:last-child').innerHTML = cfg.note;
+  const svg = document.getElementById('timeline-svg');
+  svg.innerHTML = '';
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // axis line
+  const axisY = 320;
+  const xAxis = document.createElementNS(ns,'line');
+  xAxis.setAttribute('x1',40); xAxis.setAttribute('x2',1040); xAxis.setAttribute('y1',axisY); xAxis.setAttribute('y2',axisY);
+  xAxis.setAttribute('stroke','#2C3742'); svg.appendChild(xAxis);
+
+  // x ticks
+  [35,45,55,65,75,85,95,105].forEach(t=>{
+    const x = scaleX(t);
+    const tick = document.createElementNS(ns,'line');
+    tick.setAttribute('x1',x); tick.setAttribute('x2',x); tick.setAttribute('y1',axisY); tick.setAttribute('y2',axisY+6);
+    tick.setAttribute('stroke','#5C6774'); svg.appendChild(tick);
+    const label = document.createElementNS(ns,'text');
+    label.setAttribute('x',x); label.setAttribute('y',axisY+22); label.setAttribute('text-anchor','middle');
+    label.setAttribute('fill','#8C99A6'); label.setAttribute('font-size','11'); label.setAttribute('font-family','IBM Plex Mono');
+    label.textContent = t+'s'; svg.appendChild(label);
+  });
+
+  // normal band (shaded, approx +-25 around normal curve)
+  const bandTop = NORMAL_CURVE.map(p=>[p[0], p[1]-22]);
+  const bandBot = NORMAL_CURVE.map(p=>[p[0], p[1]+22]).reverse();
+  const bandPts = bandTop.concat(bandBot).map(p=>[scaleX(p[0]), scaleY(p[1])]);
+  const bandPath = document.createElementNS(ns,'path');
+  bandPath.setAttribute('d', smoothPath(bandPts)+' Z');
+  bandPath.setAttribute('fill','#5C6774'); bandPath.setAttribute('opacity','0.14');
+  svg.appendChild(bandPath);
+
+  // normal curve line
+  const normalPts = NORMAL_CURVE.map(p=>[scaleX(p[0]), scaleY(p[1])]);
+  const normalPath = document.createElementNS(ns,'path');
+  normalPath.setAttribute('d', smoothPath(normalPts));
+  normalPath.setAttribute('fill','none'); normalPath.setAttribute('stroke','#8C99A6'); normalPath.setAttribute('stroke-width','2');
+  normalPath.setAttribute('stroke-dasharray','4 3');
+  svg.appendChild(normalPath);
+
+  // defect curve
+  const defPts = cfg.curve.map(p=>[scaleX(p[0]), scaleY(p[1])]);
+  const defPath = document.createElementNS(ns,'path');
+  defPath.setAttribute('d', smoothPath(defPts));
+  defPath.setAttribute('fill','none');
+  defPath.setAttribute('stroke','#4C9FE8'); defPath.setAttribute('stroke-width','2.6');
+  svg.appendChild(defPath);
+
+  // branch point vertical line
+  const bx = scaleX(cfg.branch);
+  const bLine = document.createElementNS(ns,'line');
+  bLine.setAttribute('x1',bx); bLine.setAttribute('x2',bx); bLine.setAttribute('y1',30); bLine.setAttribute('y2',axisY);
+  bLine.setAttribute('stroke', getComputedStyle(document.documentElement).getPropertyValue(cfg.color.replace('var(','').replace(')','')) || '#D6544B');
+  bLine.setAttribute('stroke-width','1.6'); bLine.setAttribute('stroke-dasharray','5 4'); bLine.setAttribute('opacity','0.85');
+  svg.appendChild(bLine);
+
+  const bLabel = document.createElementNS(ns,'text');
+  bLabel.setAttribute('x', bx); bLabel.setAttribute('y', 22); bLabel.setAttribute('text-anchor','middle');
+  bLabel.setAttribute('font-family','IBM Plex Mono'); bLabel.setAttribute('font-size','12'); bLabel.setAttribute('font-weight','600');
+  bLabel.setAttribute('fill', cfg.color.startsWith('var')? getComputedStyle(document.documentElement).getPropertyValue(cfg.color.slice(4,-1)) : cfg.color);
+  bLabel.textContent = cfg.branch+'s 분기';
+  svg.appendChild(bLabel);
+
+  // y axis label
+  const yLabel = document.createElementNS(ns,'text');
+  yLabel.setAttribute('x',40); yLabel.setAttribute('y',24); yLabel.setAttribute('fill','#5C6774');
+  yLabel.setAttribute('font-size','11'); yLabel.setAttribute('font-family','IBM Plex Mono');
+  yLabel.textContent = 'R03 Gripper Load (정규화)';
+  svg.appendChild(yLabel);
+}
+
+document.querySelectorAll('#defect-pills .pill').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#defect-pills .pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTimeline(btn.dataset.cls);
+  });
+});
+renderTimeline('nonose');
+
+/* ---------- Page 3: case studies ---------- */
+const CASES = [
+  {id:'5_100', label:'Normal', cls:'normal', actual:'Normal', pred:'Normal', match:true,
+   evidence:'Body1/Body2/Nose 전 봉우리 존재',
+   explain:'4개 봉우리(투입완료 기준 51·64·77·88초)가 모두 정상 범위 — 결손 신호 없음으로 규칙기반이 Normal 판정.',
+   curve: NORMAL_CURVE},
+  {id:'5_45', label:'NoNose', cls:'nonose', actual:'NoNose', pred:'NoNose', match:true,
+   evidence:'Nose 봉우리(투입완료 기준 약 78~86초) 소실, Body1·Body2는 존재',
+   explain:'R03 (투입완료 기준) 약 78~86초 구간 최댓값이 임계값(3110.5) 미만 — Nose 미조립으로 판정, 실제 라벨과 일치.',
+   curve: DEFECTS.nonose.curve},
+  {id:'5_53', label:'NoNose,NoBody2', cls:'nobody2', actual:'NoNose,NoBody2', pred:'NoNose,NoBody2', match:true,
+   evidence:'Body1 동작이 정상보다 길게 늘어져 Body1·Body2 두 구간에 걸쳐 하나의 봉우리로 찍힘',
+   explain:'Body2가 있어서가 아니라 Body1을 끼우는 동작 자체가 평소보다 오래(약 17초) 걸려 두 시간창에 걸쳐 이어진 것. 개선 전(창 겹침 미보정)에는 NoNose로 오분류됐으나, "Body1-Body2 사이 baseline 복귀 여부(gap 체크)"를 추가한 뒤로는 봉우리가 하나로 이어진 걸 정확히 인식해 NoBody2로 올바르게 판정.',
+   curve: [[34.59,300],[48.59,300],[49.59,297],[50.59,105],[54.59,100],[58.59,98],[62.59,100],[66.59,105],
+           [67.59,297],[84.59,300],[86.59,300],[87.59,297],[89.09,120],[90.59,140],[92.09,297],
+           [96.59,300],[104.59,300]]},
+  {id:'5_212', label:'3중결손', cls:'triple', actual:'NoNose,NoBody2,NoBody1', pred:'NoNose,NoBody2,NoBody1', match:true,
+   evidence:'Body1/Body2/Nose 봉우리 전부 소실',
+   explain:'가장 이른 (투입완료 기준) 58초 시점부터 신호가 갈라짐 — 3개 부품 모두 미조립으로 규칙기반이 정확히 판정.',
+   curve: DEFECTS.triple.curve},
+  {id:'5_253', label:'탐지 사례', cls:'nonose', actual:'NoNose (원본) · 지연보정 후 신호와 일치', pred:'NoNose', match:true,
+   evidence:'R01 투입 단계 10.6초 지연 — 규칙기반 시스템이 지연을 자동 보정해 재판정',
+   explain:'규칙기반 판정 시스템에 사이클별 지연시간 보정 로직을 추가한 결과, 이 사이클의 신호가 원본 라벨(NoNose)과 정확히 일치함을 시스템이 스스로 탐지해냈다 — 라벨 검증 도구로도 활용 가능함을 보여주는 사례. (최종 라벨 확정은 튜터의 별도 현장 확인 기준을 따름)',
+   curve: DEFECTS.nonose.curve},
+  {id:'5_40', label:'경계 케이스', cls:'boundary', actual:'NoNose,NoBody2 (원본)', pred:'3중결손과 혼동 가능', match:false,
+   evidence:'표준 판정창(투입완료 기준 약 30~107초)엔 신호 없음 — 실제 봉우리는 (투입완료 기준) 약 106~122초·152~159초, R01 투입완료 자체는 15.39초로 정상(320개 원본 중앙값 15.41초와 거의 동일 — 이 사이클은 이 값으로 이미 원점 이동됨)',
+   explain:'라벨오류 의심 후보(5_10·5_11·5_28·5_265, 조립순서상 물리적으로 불가능한 조합)와는 성격이 다름. R01 투입완료는 정상 타이밍이라 상대시간 보정을 적용해도 이 사이클의 지연은 설명되지 않는, 원인 불명의 R03 자체 지연으로 추정됨. 표준 시간창만 보면 3중결손(전체 미조립)처럼 보이지만, 실제로는 투입완료 후 훨씬 늦은 시점에 Body1·Body2로 추정되는 두 봉우리가 따로 존재 — 알고리즘으로 강제 보정하지 않고 별도 경계 케이스로 남겨둠.',
+   xrange:[84.6,166.6], yrange:[40,300], ticks:[95,115,135,155],
+   curve: [[84.6,300],[105.6,300],[107.6,105],[114.6,100],[120.6,112],[124.6,300],[149.6,300],
+           [152.6,150],[155.1,140],[158.6,158],[162.6,300],[166.6,300]]}
+];
+const grid = document.getElementById('case-grid');
+CASES.forEach((c,i)=>{
+  const card = document.createElement('div');
+  card.className = 'case-card' + (i===0?' active':'');
+  card.innerHTML = `<div class="case-swatch" style="background:var(--${c.cls==='normal'?'normal':c.cls});"></div>
+    <div class="case-body"><div class="cid">${c.id}</div><div class="lbl">${c.label}</div></div>`;
+  card.onclick = ()=>{
+    document.querySelectorAll('.case-card').forEach(x=>x.classList.remove('active'));
+    card.classList.add('active');
+    renderCase(c);
+  };
+  grid.appendChild(card);
+});
+
+function renderCase(c){
+  document.getElementById('case-title').textContent = `사이클 ${c.id} — ${c.label}`;
+  document.getElementById('v-actual').textContent = c.actual;
+  document.getElementById('v-pred').textContent = c.pred;
+  const mEl = document.getElementById('v-match');
+  mEl.textContent = c.match ? '일치' : '확인 필요';
+  mEl.className = 'status-chip ' + (c.match ? 'match' : 'watch');
+  document.getElementById('v-evidence').textContent = c.evidence;
+  document.getElementById('v-explain').textContent = c.explain;
+
+  const svg = document.getElementById('case-svg');
+  svg.innerHTML='';
+  const ns='http://www.w3.org/2000/svg';
+  const xr = c.xrange || [45,122];
+  const yr = c.yrange || [40,300];
+  function sx(t){ return 30 + (t-xr[0])/(xr[1]-xr[0]) * 580; }
+  function sy(v){ return 20 + (v-yr[0])/(yr[1]-yr[0]) * 170; }
+  const axisY = 190;
+  const xAxis = document.createElementNS(ns,'line');
+  xAxis.setAttribute('x1',30); xAxis.setAttribute('x2',610); xAxis.setAttribute('y1',axisY); xAxis.setAttribute('y2',axisY);
+  xAxis.setAttribute('stroke','#2C3742'); svg.appendChild(xAxis);
+  (c.ticks || [50,70,90,110]).forEach(t=>{
+    const x = sx(t);
+    const label = document.createElementNS(ns,'text');
+    label.setAttribute('x',x); label.setAttribute('y',axisY+18); label.setAttribute('text-anchor','middle');
+    label.setAttribute('fill','#8C99A6'); label.setAttribute('font-size','10.5'); label.setAttribute('font-family','IBM Plex Mono');
+    label.textContent = t+'s'; svg.appendChild(label);
+  });
+  const pts = c.curve.map(p=>[sx(p[0]), sy(p[1])]);
+  const path = document.createElementNS(ns,'path');
+  path.setAttribute('d', smoothPath(pts));
+  path.setAttribute('fill','none'); path.setAttribute('stroke','#4C9FE8'); path.setAttribute('stroke-width','2.4');
+  svg.appendChild(path);
+}
+renderCase(CASES[0]);
+</script>
+</body>
+</html>
