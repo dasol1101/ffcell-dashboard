@@ -1,7 +1,12 @@
 """
-FFCell 대시보드 v3 — KPI 게이지 + 사이드바 내비게이션 + 전역 클래스 필터
+FFCell 대시보드 v4 — 피드백 반영판
+1페이지 개요: 조립 성공/실패 카운트 + 정확도/탐지균형 KPI, 전체 데이터 개요,
+              센서별 실제 움직임(원신호), 정상 vs 결함 비교
+2페이지: 모델 성능·통계 지표 (규칙기반/RF/하이브리드 비교, confusion matrix, 판정 로직)
+3페이지: 결함탐지 지표 상단 + SHAP·클래스별 recall·피처중요도
+4페이지: 이미지 CV (예정)
 실행 방법: streamlit run app.py
-필요 데이터: ./data 폴더 (PART126 export 셀 결과물, 이전과 동일 구조)
+필요 데이터: ./data 폴더 (PART126 + PART127 export 결과물)
 """
 
 import json
@@ -15,6 +20,14 @@ import streamlit as st
 st.set_page_config(page_title="FFCell 대시보드", layout="wide", page_icon="🤖")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+IMAGES_DIR = os.path.join(os.path.dirname(__file__), "images")
+# 결함 유형별 대표 이미지 (n8n→Slack 알림 첨부용과 동일 소스, State9/Test 폴더 첫 파일)
+# 판정 근거가 아니라 사람이 눈으로 참고하기 쉽게 붙이는 참고 사진일 뿐 — 실제 그 사이클 사진 아님
+DEFECT_IMAGE_MAP = {
+    "NoNose": "sample_nonose.png",
+    "NoNose,NoBody2": "sample_nonose_nobody2.png",
+    "NoNose,NoBody2,NoBody1": "sample_triple.png",
+}
 LABEL_ORDER = ["Normal", "NoNose", "NoNose,NoBody2", "NoNose,NoBody2,NoBody1"]
 LABEL_SHORT = {
     "Normal": "Normal", "NoNose": "NoNose",
@@ -24,7 +37,10 @@ COLOR_MAP = {
     "Normal": "#4C72B0", "NoNose": "#DD8452",
     "NoNose,NoBody2": "#C44E52", "NoNose,NoBody2,NoBody1": "#8172B2",
 }
-BASELINE_MACRO_RECALL = 0.28  # 39장 원래 GroupKFold(RF, 오염 피처 포함) 기준값
+ROBOT_SENSOR_COLS = {
+    "R01": "I_R01_Gripper_Load", "R02": "I_R02_Gripper_Load",
+    "R03": "I_R03_Gripper_Load", "R04": "I_R04_Gripper_Load",
+}
 
 
 @st.cache_data
@@ -45,16 +61,27 @@ def load_json(name):
 
 
 def missing(name):
-    st.warning(f"`data/{name}` 없음 — PART126 export 셀 실행 여부를 확인해주세요.")
+    st.warning(f"`data/{name}` 없음 — export 셀 실행 여부를 확인해주세요.")
+
+
+def binary_detection_metrics(cm_df):
+    """confusion_matrix_rule.csv (실제 x 예측)로부터 정상 vs 결함 이진 탐지 지표를 계산."""
+    idx_col = cm_df.columns[0]
+    cm = cm_df.set_index(idx_col)
+    defect_rows = [l for l in cm.index if l != "Normal"]
+    defect_cols = [c for c in cm.columns if c != "Normal"]
+    tp = cm.loc[defect_rows, defect_cols].values.sum()
+    fn = cm.loc[defect_rows, "Normal"].values.sum() if "Normal" in cm.columns else 0
+    fp = cm.loc["Normal", defect_cols].values.sum() if "Normal" in cm.index else 0
+    tn = cm.loc["Normal", "Normal"] if ("Normal" in cm.index and "Normal" in cm.columns) else 0
+    recall = tp / (tp + fn) if (tp + fn) else 0
+    precision = tp / (tp + fp) if (tp + fp) else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0
+    return {"recall": recall, "precision": precision, "f1": f1, "tp": tp, "fn": fn, "fp": fp, "tn": tn}
 
 
 st.markdown(
-    """
-    <style>
-    div[data-testid="stMetricValue"] { font-size: 1.6rem; }
-    .block-container { padding-top: 2rem; }
-    </style>
-    """,
+    "<style>div[data-testid='stMetricValue']{font-size:1.5rem} .block-container{padding-top:2rem}</style>",
     unsafe_allow_html=True,
 )
 
@@ -64,175 +91,146 @@ st.markdown(
 st.sidebar.title("FFCell 대시보드")
 page = st.sidebar.radio(
     "이동",
-    ["개요 (KPI)", "EDA — 센서 패턴", "SHAP · 탐지 난이도", "알고리즘 비교", "이미지 CV (예정)"],
+    ["① 개요", "② 모델 성능 · 통계 지표", "③ 결함탐지 · SHAP", "④ 이미지 CV (예정)", "⑤ 결함 대표 이미지 (Slack 알림용)"],
 )
-
 st.sidebar.divider()
-st.sidebar.caption("전역 필터 (EDA 차트에 적용)")
+st.sidebar.caption("전역 필터 (① 개요 페이지에 적용)")
 selected_labels = st.sidebar.multiselect(
-    "표시할 클래스", LABEL_ORDER, default=LABEL_ORDER,
-    format_func=lambda x: LABEL_SHORT[x],
+    "표시할 클래스", LABEL_ORDER, default=LABEL_ORDER, format_func=lambda x: LABEL_SHORT[x],
 )
 if not selected_labels:
     selected_labels = LABEL_ORDER
 
 st.title("🤖 FFCell — 로봇 조립 결함 분류 대시보드")
 
+class_dist = load_csv("eda_class_dist.csv")
+kpi = load_json("kpi_summary.json")
+
 # ============================================================================
-# 페이지 1: 개요 (KPI 게이지)
+# ① 개요
 # ============================================================================
-if page == "개요 (KPI)":
-    kpi = load_json("kpi_summary.json")
-    if kpi is None:
-        missing("kpi_summary.json")
+if page == "① 개요":
+    # ── KPI: 조립 성공/실패 카운트 + 정확도/탐지균형 ──
+    if class_dist is not None and kpi is not None:
+        success_n = int(class_dist.loc[class_dist["label"] == "Normal", "cycle_count"].sum())
+        total_n = int(class_dist["cycle_count"].sum())
+        fail_n = total_n - success_n
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("조립 성공 (Normal)", f"{success_n:,}개", f"{success_n/total_n:.0%}")
+        c2.metric("조립 실패 (결함)", f"{fail_n:,}개", f"{fail_n/total_n:.0%}", delta_color="inverse")
+        c3.metric(f"정확도 ({kpi['main_method']})", f"{kpi['main_method_accuracy']*100:.1f}%")
+        c4.metric("탐지 균형 (macro recall)", f"{kpi['main_method_macro_recall']*100:.1f}%")
     else:
-        st.caption(f"전체 사이클 수: **{kpi['total_cycles']:,}개**  ·  주력 모델: **{kpi['main_method']}**")
+        missing("eda_class_dist.csv / kpi_summary.json")
 
-        g1, g2, g3 = st.columns(3)
+    st.divider()
 
-        with g1:
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number", value=kpi["main_method_accuracy"] * 100,
-                title={"text": "주력 모델 정확도"},
-                number={"suffix": "%"},
-                gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#4C72B0"}},
-            ))
-            fig.update_layout(height=260, margin=dict(t=50, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-
-        with g2:
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number+delta", value=kpi["main_method_macro_recall"] * 100,
-                title={"text": "매크로 Recall (결함탐지 균형)"},
-                number={"suffix": "%"},
-                delta={"reference": BASELINE_MACRO_RECALL * 100, "suffix": "%p",
-                       "increasing": {"color": "#2ca02c"}},
-                gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#DD8452"}},
-            ))
-            fig.update_layout(height=260, margin=dict(t=50, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(f"기준선(39장 원래 GroupKFold RF): {BASELINE_MACRO_RECALL*100:.0f}%")
-
-        with g3:
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number", value=kpi["best_binary_f1"] * 100,
-                title={"text": f"최고 결함탐지 F1"},
-                number={"suffix": "%"},
-                gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#C44E52"}},
-            ))
-            fig.update_layout(height=260, margin=dict(t=50, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(f"방법: {kpi['best_binary_f1_method']}")
-
-        st.info(f"💡 탐지 난이도 참고: {kpi['hardest_class_note']}")
-
-        per_class = load_csv("per_class_recall_rule.csv")
-        if per_class is not None:
-            st.subheader("클래스별 Recall — 한눈에 보기")
-            cols = st.columns(len(LABEL_ORDER))
-            for i, lbl in enumerate(LABEL_ORDER):
-                row = per_class[per_class["label"] == lbl]
-                val = row["recall"].values[0] if len(row) else None
-                with cols[i]:
-                    st.metric(LABEL_SHORT[lbl], f"{val*100:.0f}%" if pd.notna(val) else "N/A")
-
-# ============================================================================
-# 페이지 2: EDA — 센서 패턴 (전역 필터 적용)
-# ============================================================================
-elif page == "EDA — 센서 패턴":
-    st.header("정상 vs 결함 — 센서 패턴 비교")
-
-    class_dist = load_csv("eda_class_dist.csv")
-    gripper = load_csv("eda_gripper_load.csv")
-    timeline = load_csv("eda_timeline_sample.csv")
-
-    col1, col2 = st.columns(2)
+    # ── 전체 데이터 개요 ──
+    st.subheader("전체 데이터 개요")
     if class_dist is not None:
+        filt = class_dist[class_dist["label"].isin(selected_labels)]
+        col1, col2 = st.columns([2, 1])
         with col1:
-            filt = class_dist[class_dist["label"].isin(selected_labels)]
             fig = px.bar(
-                filt, x="label", y="cycle_count", color="label",
-                color_discrete_map=COLOR_MAP, category_orders={"label": LABEL_ORDER},
-                text="cycle_count",
+                filt, x="label", y="cycle_count", color="label", color_discrete_map=COLOR_MAP,
+                category_orders={"label": LABEL_ORDER}, text="cycle_count",
             )
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="사이클 수",
-                               title="사이클 단위 클래스 분포")
+            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="사이클 수")
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            fig = px.pie(filt, names="label", values="cycle_count",
+                         color="label", color_discrete_map=COLOR_MAP,
+                         category_orders={"label": LABEL_ORDER})
             st.plotly_chart(fig, use_container_width=True)
     else:
         missing("eda_class_dist.csv")
 
-    if gripper is not None:
-        with col2:
-            robots = sorted(gripper["robot"].unique())
-            chosen_robot = st.selectbox("로봇 선택", robots, index=0)
-            sub = gripper[(gripper["robot"] == chosen_robot) & (gripper["label"].isin(selected_labels))]
-            fig = px.box(
-                sub, x="label", y="gripper_load_mean", color="label",
-                color_discrete_map=COLOR_MAP, category_orders={"label": LABEL_ORDER},
-                points="outliers",
+    st.divider()
+
+    # ── 센서별 실제 움직임 (원신호 파형) ──
+    st.subheader("센서별 실제 움직임 — 로봇 원신호 파형")
+    raw_sensor = load_csv("raw_sensor_example_cycles.csv")
+    if raw_sensor is not None:
+        robot = st.selectbox("로봇 선택", list(ROBOT_SENSOR_COLS.keys()), index=2)
+        sensor_col = ROBOT_SENSOR_COLS[robot]
+        if sensor_col in raw_sensor.columns:
+            filt = raw_sensor[raw_sensor["label"].isin(selected_labels)]
+            fig = px.line(
+                filt, x="elapsed_s", y=sensor_col, color="label", color_discrete_map=COLOR_MAP,
+                category_orders={"label": LABEL_ORDER},
             )
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Gripper Load (사이클 평균)",
-                               title=f"{chosen_robot} 그리퍼 부하 — 클래스별 비교")
+            fig.update_layout(xaxis_title="사이클 경과 시간(초)", yaxis_title=f"{robot} 그리퍼 부하")
             st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "각 클래스 대표 사이클 1개씩의 실제 신호 파형입니다. "
+                + ("※ R01·R04는 오염 이슈로 모델 학습에는 쓰지 않지만, 실제 신호 모양 확인용으로는 그대로 표시합니다."
+                   if robot in ("R01", "R04") else "")
+            )
+        else:
+            st.warning(f"{sensor_col} 컬럼이 데이터에 없습니다.")
+    else:
+        missing("raw_sensor_example_cycles.csv (PART127 export 필요)")
+
+    st.divider()
+
+    # ── 정상 vs 결함 비교 ──
+    st.subheader("정상 vs 결함 — 로봇별 그리퍼 부하 비교")
+    gripper = load_csv("eda_gripper_load.csv")
+    if gripper is not None:
+        robots = sorted(gripper["robot"].unique())
+        chosen_robot = st.selectbox("비교할 로봇 선택", robots, index=0, key="cmp_robot")
+        sub = gripper[(gripper["robot"] == chosen_robot) & (gripper["label"].isin(selected_labels))]
+        fig = px.box(
+            sub, x="label", y="gripper_load_mean", color="label", color_discrete_map=COLOR_MAP,
+            category_orders={"label": LABEL_ORDER}, points="outliers",
+        )
+        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Gripper Load (사이클 평균)")
+        st.plotly_chart(fig, use_container_width=True)
     else:
         missing("eda_gripper_load.csv")
 
-    st.subheader("시간축 결함 발생 타임라인")
-    if timeline is not None:
-        timeline["_time"] = pd.to_datetime(timeline["_time"])
-        filt = timeline[timeline["label"].isin(selected_labels)]
-        fig = px.scatter(
-            filt, x="_time", y="label", color="label",
-            color_discrete_map=COLOR_MAP, category_orders={"label": LABEL_ORDER}, opacity=0.5,
-        )
-        fig.update_traces(marker=dict(size=4))
-        fig.update_layout(showlegend=False, xaxis_title="시간", yaxis_title="")
+# ============================================================================
+# ② 모델 성능 · 통계 지표
+# ============================================================================
+elif page == "② 모델 성능 · 통계 지표":
+    st.header("모델 성능 · 통계 지표")
+
+    rule_summary = load_csv("rule_validation_summary.csv")
+    if rule_summary is not None:
+        st.subheader("성능 비교 — 세션1~4 학습 → 세션5 검증")
+        display_df = rule_summary.copy()
+        display_df["accuracy"] = (display_df["accuracy"] * 100).round(1).astype(str) + "%"
+        display_df["macro_recall"] = (display_df["macro_recall"] * 100).round(1).astype(str) + "%"
+        display_df = display_df.rename(columns={
+            "method": "방법", "accuracy": "정확도", "macro_recall": "매크로 recall", "n_test": "테스트 사이클 수",
+        })
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        fig = px.bar(rule_summary, x="method", y="accuracy", color="method",
+                     text=[f"{v:.1%}" for v in rule_summary["accuracy"]])
+        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="정확도", yaxis_tickformat=".0%")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        missing("eda_timeline_sample.csv")
+        missing("rule_validation_summary.csv")
 
-# ============================================================================
-# 페이지 3: SHAP · 탐지 난이도
-# ============================================================================
-elif page == "SHAP · 탐지 난이도":
-    st.header("SHAP 해석 · 결함 유형별 탐지 난이도")
+    st.divider()
+    st.subheader("Confusion Matrix — 규칙기반 단독")
+    cm_rule = load_csv("confusion_matrix_rule.csv")
+    if cm_rule is not None:
+        idx_col = cm_rule.columns[0]
+        cm = cm_rule.set_index(idx_col)
+        fig = go.Figure(data=go.Heatmap(
+            z=cm.values, x=cm.columns, y=cm.index, colorscale="Blues",
+            text=cm.values, texttemplate="%{text}",
+        ))
+        fig.update_layout(xaxis_title="예측", yaxis_title="실제")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        missing("confusion_matrix_rule.csv")
 
-    colA, colB = st.columns(2)
-    with colA:
-        shap_df = load_csv("shap_importance_top15.csv")
-        if shap_df is not None:
-            fig = px.bar(
-                shap_df.sort_values("shap_mean_abs"), x="shap_mean_abs", y="feature", orientation="h",
-                title="SHAP 기반 피처 중요도 Top 15",
-            )
-            fig.update_layout(xaxis_title="평균 |SHAP|", yaxis_title="")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            missing("shap_importance_top15.csv")
-
-        shap_png = os.path.join(DATA_DIR, "shap_summary_blockA.png")
-        if os.path.exists(shap_png):
-            st.image(shap_png, caption="SHAP summary plot (Block A 공식 피처셋, 78개)")
-
-    with colB:
-        per_class = load_csv("per_class_recall_rule.csv")
-        if per_class is not None:
-            fig = px.bar(
-                per_class, x="label", y="recall", color="label",
-                color_discrete_map=COLOR_MAP, category_orders={"label": LABEL_ORDER},
-                text=[f"{v:.0%}" if pd.notna(v) else "N/A" for v in per_class["recall"]],
-                title="규칙기반 클래스별 Recall (탐지 난이도)",
-            )
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Recall", yaxis_tickformat=".0%")
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(
-                "Nose 유무(NoNose 판정)는 R03 신호로 거의 완벽히 분리되어 recall이 높다. "
-                "실제로 탐지가 어려운 쪽은 Body1(빠진 부품 수가 적을수록 신호가 약해지는 구조)이다."
-            )
-        else:
-            missing("per_class_recall_rule.csv")
-
-    with st.expander("규칙기반 판정 로직 / 피처 흐름도"):
+    st.divider()
+    with st.expander("규칙기반 판정 로직 · 피처 흐름도 보기"):
         meta = load_json("rule_logic_meta.json")
         if meta is not None:
             for line in meta["hierarchy"]:
@@ -243,62 +241,96 @@ elif page == "SHAP · 탐지 난이도":
             st.dataframe(funnel, use_container_width=True, hide_index=True)
 
 # ============================================================================
-# 페이지 4: 알고리즘 비교 (탭으로 분리)
+# ③ 결함탐지 · SHAP
 # ============================================================================
-elif page == "알고리즘 비교":
-    st.header("알고리즘별 성능 비교 — 세션1~4 학습 → 세션5 검증")
+elif page == "③ 결함탐지 · SHAP":
+    st.header("결함탐지 지표 · SHAP 해석 · 탐지 난이도")
 
-    tab_bin, tab_multi = st.tabs(["이진 (정상 vs 결함)", "4클래스 세부"])
+    cm_rule = load_csv("confusion_matrix_rule.csv")
+    if cm_rule is not None:
+        m = binary_detection_metrics(cm_rule)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("결함탐지 Recall", f"{m['recall']*100:.1f}%")
+        c2.metric("결함탐지 Precision", f"{m['precision']*100:.1f}%")
+        c3.metric("결함탐지 F1", f"{m['f1']*100:.1f}%")
+        st.caption("정상(Normal) vs 결함(그 외 전체)으로 이진화했을 때의 규칙기반 탐지 성능입니다.")
+    else:
+        missing("confusion_matrix_rule.csv")
 
-    with tab_bin:
-        binary_comp = load_csv("model_comparison_binary.csv")
-        if binary_comp is not None:
+    st.divider()
+    colA, colB = st.columns(2)
+
+    with colA:
+        st.subheader("SHAP 기반 피처 중요도 Top 15")
+        shap_df = load_csv("shap_importance_top15.csv")
+        if shap_df is not None:
+            fig = px.bar(shap_df.sort_values("shap_mean_abs"), x="shap_mean_abs", y="feature", orientation="h")
+            fig.update_layout(xaxis_title="평균 |SHAP|", yaxis_title="")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            missing("shap_importance_top15.csv")
+        shap_png = os.path.join(DATA_DIR, "shap_summary_blockA.png")
+        if os.path.exists(shap_png):
+            st.image(shap_png, caption="SHAP summary plot (Block A 공식 피처셋, 78개)")
+
+    with colB:
+        st.subheader("클래스별 탐지 난이도 (recall)")
+        per_class = load_csv("per_class_recall_rule.csv")
+        if per_class is not None:
             fig = px.bar(
-                binary_comp, x="method", y="f1", color="method",
-                text=[f"{v:.1%}" for v in binary_comp["f1"]],
+                per_class, x="label", y="recall", color="label", color_discrete_map=COLOR_MAP,
+                category_orders={"label": LABEL_ORDER},
+                text=[f"{v:.0%}" if pd.notna(v) else "N/A" for v in per_class["recall"]],
             )
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="F1", yaxis_tickformat=".0%")
+            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Recall", yaxis_tickformat=".0%")
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("NoNose는 R03 신호로 거의 완벽히 분리되어 recall이 높다. 실제로 탐지가 어려운 쪽은 Body1이다.")
+        else:
+            missing("per_class_recall_rule.csv")
+
+        if shap_df is not None and "rf_importance" in shap_df.columns:
+            st.subheader("피처 중요도 (RandomForest 기준)")
+            fig = px.bar(
+                shap_df.sort_values("rf_importance"), x="rf_importance", y="feature", orientation="h",
+            )
+            fig.update_layout(xaxis_title="RF importance", yaxis_title="")
             st.plotly_chart(fig, use_container_width=True)
 
-            display_bc = binary_comp.copy()
-            for col in ["recall", "precision", "f1"]:
-                display_bc[col] = (display_bc[col] * 100).round(1).astype(str) + "%"
-            display_bc = display_bc.rename(columns={
-                "method": "방법", "recall": "Recall", "precision": "Precision", "f1": "F1"
-            })
-            st.dataframe(display_bc, use_container_width=True, hide_index=True)
-            st.caption(
-                "Isolation Forest·LSTM-Autoencoder(있다면)는 '정상 아님'까지만 판정 가능하고 "
-                "부품별 세부 판정은 못 한다. 정상 학습 샘플이 20개 미만이라 결과를 일반화 성능으로 "
-                "과신하지 말 것."
-            )
-        else:
-            missing("model_comparison_binary.csv")
-
-    with tab_multi:
-        multiclass_comp = load_csv("model_comparison_multiclass.csv")
-        if multiclass_comp is not None:
-            fig = px.bar(
-                multiclass_comp, x="method", y="macro_recall", color="method",
-                text=[f"{v:.1%}" for v in multiclass_comp["macro_recall"]],
-            )
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Macro Recall", yaxis_tickformat=".0%")
-            st.plotly_chart(fig, use_container_width=True)
-
-            display_mc = multiclass_comp.copy()
-            for col in ["accuracy", "macro_recall"]:
-                display_mc[col] = (display_mc[col] * 100).round(1).astype(str) + "%"
-            display_mc = display_mc.rename(columns={"method": "방법", "accuracy": "정확도", "macro_recall": "매크로 Recall"})
-            st.dataframe(display_mc, use_container_width=True, hide_index=True)
-        else:
-            missing("model_comparison_multiclass.csv")
-
 # ============================================================================
-# 페이지 5: 이미지 CV (예정)
+# ④ 이미지 CV (예정)
 # ============================================================================
-else:
+elif page == "④ 이미지 CV (예정)":
     st.header("이미지 CV — 개발 중")
     st.info(
         "카메라 도메인 시프트 대응(Train: bbox_cam1 → Test: bbox_cam11) 파이프라인 구축 중. "
         "CV 베이스라인 확보 후 센서 판정과 나란히 비교하는 섹션을 추가할 예정입니다."
+    )
+
+# ============================================================================
+# ⑤ 결함 대표 이미지 (Slack 알림용) — 판정 근거 아님, 알림 첨부용 참고 사진
+# ============================================================================
+else:
+    st.header("결함 대표 이미지 — n8n → Slack 알림 첨부용")
+    st.caption(
+        "이미지를 판정(분류)에 쓰는 것이 아니라, 결함이 발생했을 때 n8n→Slack 알림에 "
+        "참고 사진으로 첨부하는 용도로만 사용합니다. 실제 그 사이클을 촬영한 사진이 아니라, "
+        "해당 결함 유형의 대표 예시 사진입니다 (Cycle_state_9 · Test 폴더 기준)."
+    )
+    st.divider()
+
+    cols = st.columns(len(DEFECT_IMAGE_MAP))
+    for col, (label, filename) in zip(cols, DEFECT_IMAGE_MAP.items()):
+        img_path = os.path.join(IMAGES_DIR, filename)
+        with col:
+            if os.path.exists(img_path):
+                st.image(img_path, caption=LABEL_SHORT.get(label, label), use_container_width=True)
+            else:
+                st.warning(f"`images/{filename}` 없음")
+                st.caption(f"결함 유형: {label}")
+
+    st.divider()
+    st.info(
+        "이 사진들은 판정 근거가 아니라 알림 첨부용 참고 자료입니다. "
+        "센서(R03) 판정만으로 결함 유형이 확정되며, 이미지는 그 결과를 사람이 눈으로 "
+        "참고하기 쉽게 붙여주는 역할만 합니다."
     )
