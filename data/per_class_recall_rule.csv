@@ -1,5 +1,5 @@
 label,recall,n_actual
-Normal,,0
-NoNose,0.6190476190476191,21
-"NoNose,NoBody2",,0
-"NoNose,NoBody2,NoBody1",,0
+Normal,0.9927536231884058,138
+NoNose,1.0,30
+"NoNose,NoBody2",0.9215686274509803,51
+"NoNose,NoBody2,NoBody1",1.0,54

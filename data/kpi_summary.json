@@ -1,10 +1,10 @@
 {
-  "total_cycles": 323,
-  "main_method": "규칙기반+ML 하이브리드",
-  "main_method_accuracy": 0.11029411764705882,
-  "main_method_macro_recall": 0.25,
+  "total_cycles": 316,
+  "main_method": "규칙기반 단독",
+  "main_method_accuracy": 0.982,
+  "main_method_macro_recall": 0.979,
   "best_binary_f1_method": "규칙기반 단독",
   "best_binary_f1": 0.9888475836431226,
   "hardest_class": "NoNose,NoBody2 (Body1 판정)",
-  "hardest_class_note": "Nose(NoNose 여부)는 R03 신호로 거의 완벽 분리됨(r=-0.87) — 실제 탐지 난이도가 높은 쪽은 Body1이다(103·107·111~112장 참고)."
+  "hardest_class_note": "Nose(NoNose 여부)는 R03 신호로 거의 완벽 분리됨(r=-0.87) — 실제 탐지 난이도가 높은 쪽은 Body1이다. window_max+지연보정(R01 settle time)+gap체크 3단계 개선으로 NoBody2 recall이 60.8%→92.2%로 개선됨 (FFCell_v81_4of4 노트북 83번 셀 실행 결과 기준)."
 }
